@@ -1,6 +1,14 @@
 # sterling-external-authentication-container
 
-# documentation to review if necessary https://www.ibm.com/docs/en/external-auth-server/6.1.0?topic=installing-pre-installation-tasks
+I wrote here some code to deploy Sterling External Authentication mainly in Red Hat OpenShit
+
+Documentation to review if necessary https://www.ibm.com/docs/en/external-auth-server/6.1.0?topic=installing-pre-installation-tasks
+
+Install the prerequirements software
+- Helm
+- MS VSCode
+- OC and kubectl command line tool
+- Podman to pull and push the images
 
 oc login --token=sha256~8UjI6yxwmES49d4sdfsfsfsfsfsfspNfF51AM --server=https://c100-e.us-south.containers.cloud.ibm.com:31901
 Logged into "https://c100-e.us-sfsdfsfds.containers.cloud.ibm.com:31901" as "IAM#sdfsfsfsf.com" using the token provided.
