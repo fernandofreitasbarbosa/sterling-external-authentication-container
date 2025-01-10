@@ -1,0 +1,1 @@
+# sterling-external-authentication-container
