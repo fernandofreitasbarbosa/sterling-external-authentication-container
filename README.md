@@ -49,3 +49,5 @@ cp values.yaml override.yaml
 
 vi override.yaml
 
+helm install seas -f override.yaml  --debug .
+
