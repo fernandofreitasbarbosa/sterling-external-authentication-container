@@ -1,0 +1,156 @@
+{{- include "sch.config.init" (list . "ibm-seas.sch.chart.config.values") }}
+{{ $appName := include "sch.names.appName" (list .) }}
+{{ $fullName := include "sch.names.fullName" (list .) }}
+{{ $saName := include "sch.names.fullCompName" (list . "serviceaccount") }}
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{  include "sch.names.statefulSetName" (list .) }}
+  labels:
+    app.kubernetes.io/name: {{  $appName  }}
+    app.kubernetes.io/instance: {{  .Release.Name  }}
+    app.kubernetes.io/managed-by: {{  .Release.Service  }}
+    helm.sh/chart: {{  include "ibm-seas.chart" .  }}
+    release: {{  .Release.Name  }}
+    author: IBM
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{  $appName  }}
+      app.kubernetes.io/instance: {{  .Release.Name  }}
+      author: IBM
+  serviceName: {{ $fullName }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{  $appName  }}
+        app.kubernetes.io/instance: {{  .Release.Name  }}
+        app.kubernetes.io/managed-by: {{  .Release.Service  }}
+        helm.sh/chart: {{  include "ibm-seas.chart" .  }}
+        release: {{  .Release.Name  }}
+        author: IBM
+      annotations:
+{{- include "sch.metadata.annotations.metering" (list . .sch.chart.metering "" "" nil) | indent 8 }}
+
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ $saName }}
+      {{- else }}
+      serviceAccountName: {{ .Values.serviceAccount.name | default "default" }}
+      {{- end }}
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      securityContext:
+      {{ include "sch.security.securityContext" (list . .sch.chart.podSecurityContext) | indent 8 }}
+      affinity:
+      {{- include "ibm-seas.nodeAffinity" (list . .Values.affinity.nodeAffinity) | indent 8 }}
+      {{- include "ibm-seas.podAffinity" (list . .Values.affinity.podAffinity) | indent 8 }}
+      {{- include "ibm-seas.podAntiAffinity" (list . .Values.affinity.podAntiAffinity) | indent 8 }}
+      {{- if .Release.IsInstall }}
+      initContainers:
+      - name: {{ $fullName }}-init-secret
+        {{- if .Values.image.digest.enabled }}
+        image: "{{  .Values.image.repository  }}@{{ .Values.image.digest.value }}"
+        {{- else }}
+        image: "{{  .Values.image.repository  }}:{{ .Values.image.tag  }}"
+        {{- end }}
+        imagePullPolicy: {{  .Values.image.pullPolicy  }}
+        env:
+        - name: TZ
+          value: {{  .Values.timezone  }}
+        command: ["/seasinstall/maintenance.sh", "populateSecret"]
+        volumeMounts:
+        - mountPath: /seasinstall/IBM/SEAS
+          name: seas-pvc
+          subPath: SEAS
+        - mountPath: /seasConfig/secret_files
+          name: seas-secret
+        securityContext:
+{{ include "sch.security.securityContext" (list . .sch.chart.initContainerSecurityContext) | indent 12 }}
+        resources:
+            limits:
+{{ toYaml .Values.resources.limits | indent 14 }}
+            requests:
+{{ toYaml .Values.resources.requests | indent 14 }}
+      {{- end }}         
+      containers:
+        - name: {{ $fullName }}
+          {{- if .Values.image.digest.enabled }}
+          image: "{{  .Values.image.repository  }}@{{ .Values.image.digest.value }}"
+          {{- else }}
+          image: "{{  .Values.image.repository  }}:{{ .Values.image.tag  }}"
+          {{- end }}
+          imagePullPolicy: {{  .Values.image.pullPolicy  }}
+          env:
+          - name: TZ
+            value: {{  .Values.timezone  }}
+          - name: REVISION_NUMBER
+            value: "{{  .Release.Revision  }}"
+          volumeMounts:
+            - name: seas-pvc
+              mountPath: /seasinstall/IBM/SEAS  
+              subPath: SEAS
+            - mountPath: /seasConfig
+              name: seas-config 
+            {{- if .Values.customFiles }}
+            - mountPath: /seasinstall/resources
+              name: seas-pvc
+              subPath: SEAS_RESOURCES
+            {{- end }} 
+          tty: true
+          stdin: true 
+          securityContext:
+          {{ include "sch.security.securityContext" (list . .sch.chart.containerSecurityContext) | indent 12 }}
+          # Set liveness probe to determine if SEAS is running
+          livenessProbe:
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+            # Need to uncomment and comment exec command if TCP connection is failing
+            #tcpSocket:
+              #port: {{  .Values.service.jetty.containerPort  }}
+            exec:              
+              command: 
+              - bash
+              - -c
+              - monitorService.sh {{ .Values.service.jetty.containerPort }}              
+          # Set readiness probe to determine if SEAS is running
+          readinessProbe:
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+            # Need to uncomment and comment exec command if TCP connection is failing
+            #tcpSocket:
+              #port: {{  .Values.service.jetty.containerPort  }}
+            exec:              
+              command: 
+              - bash
+              - -c
+              - monitorService.sh {{ .Values.service.jetty.containerPort }}            
+          resources:
+            limits:
+{{ toYaml .Values.resources.limits | indent 14 }}
+            requests:
+{{ toYaml .Values.resources.requests | indent 14 }}
+      volumes:
+      - name: seas-pvc
+        persistentVolumeClaim:
+          {{- if .Values.persistentVolume.existingClaimName }}
+          claimName: {{ .Values.persistentVolume.existingClaimName }}
+          {{- else }}
+          claimName: {{  $fullName  }}-pvc
+          {{- end }}
+      - name: seas-config
+        configMap:
+          name: {{ $fullName }}
+      {{- if .Release.IsInstall }}
+      - name: seas-secret
+        secret:
+          secretName: {{  .Values.secret.secretName  }}
+      {{- end }} 
+       
